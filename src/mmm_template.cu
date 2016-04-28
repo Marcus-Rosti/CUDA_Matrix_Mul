@@ -129,6 +129,31 @@ void computeCpuMMM() {
 	}
 }
 
+__global__ void kernel() {
+	int srow = 0;
+	int scol = 0;
+	int i = blockDim.x * blockIdx.x + threadIdx.x;
+	int j = blockDim.y * blockIdx.y + threadIdx.y;
+	int sizeOfWork = 10;
+	int matrixIndexX = i * sizeOfWork;
+	int matrixIndexY = j * sizeOfWork;
+	__shared__ float blockA[sizeOfWork][sizeOfWork];	
+	__shared__ float blockB[sizeOfWork][sizeOfWork];
+	// copy the submatrix into shared memory
+	for (int row = matrixIndexY; row < matrixIndexY+sizeOfWork; row++) {
+		for (int col = matrixIndexX; col < matrixIndexX+sizeOfWork; col++) {			
+			blockA[srow][scol] = A[row][col];
+			blockB[srow][scol] = B[row][col];
+			scol++;
+		}
+		srow++;
+	}
+		
+
+}
+
+
+
 // function to determine if the GPU computation is done correctly by comparing the output from the GPU with that
 // from the CPU
 void compareHostAndGpuOutput() {
