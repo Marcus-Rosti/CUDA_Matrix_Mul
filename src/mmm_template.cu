@@ -28,7 +28,7 @@ void copyResultFromGPU();
 void compareHostAndGpuOutput();
 void die(const char *error); 
 void check_error(cudaError e);
-__global__ void kernel(float * A_GPU, float * B_GPU);
+__global__ void kernel(float * A_GPU, float * B_GPU, float * C_GPU);
 //----------------------------------- CUDA function definitions -----------------------------------------
 
 
@@ -56,7 +56,7 @@ int main(int argc, char **argv) {
         printf("Computation time in the CPU: %f seconds\n", elapsed);
 	
 	copyMatricesToGPU();
-	kernel <<< 32, 32 >>>  (A_GPU, B_GPU);
+	kernel <<< 32, 32 >>>  (A_GPU, B_GPU, C_GPU);
 
 	return 0;
 }
@@ -132,27 +132,52 @@ void computeCpuMMM() {
 	}
 }
 
-__global__ void kernel(float * A_GPU, float * B_GPU) {
+__global__ void kernel(float * A_GPU, float * B_GPU, float * C_GPU) {
 	int srow = 0;
 	int scol = 0;
 	int threadId = blockDim.x * blockIdx.x + threadIdx.x;
 	const int sizeOfWork = 10;
 	const int sizeOfBlock = 100;
+	// Where to start in the GPU matrix
+	int mIndex = threadId * sizeOfWork;
+
+	// copy the submatrix into shared memory
 	__shared__ float blockA[10][10]; 
 	__shared__ float blockB[10][10]; 
-	// copy the submatrix into shared memory
-	int mIndex = threadId * sizeOfWork;
+	int blockIndex = mIndex;
 	for (int i = 0; i < sizeOfBlock; i++) {
-		blockA[srow][scol] = A_GPU[mIndex];
-		blockB[srow][scol] = B_GPU[mIndex];
+		blockA[srow][scol] = A_GPU[blockIndex];
+		blockB[srow][scol] = B_GPU[blockIndex];
 		// Jump a row when finished copying column
 		if (i == sizeOfWork) {
 			srow++;
-			mIndex *= sizeOfWork;
+			blockIndex *= sizeOfWork;
 		}
 		scol++;
-		
 	}
+
+	// Compute a partial row of C
+	int aRow = threadId;
+	int cIndex = mIndex;
+	// TODO: Transpose B for better load times
+	// Will need to switch order to keep coalesced 
+
+	// Multiply a row of A 
+	for (int aCol = 0; aCol < sizeOfWork; aCol++) {
+		// with each column of B
+		for (int bCol = 0; bCol < sizeOfWork; bCol++) {
+			float cell = 1;
+			for (int bRow = 0; bRow < sizeOfWork; bRow++) {
+				cell += (blockA[aRow][aCol] * blockB[bRow][bCol]);
+			}
+			// Store the result in C
+			C_GPU[cIndex] = cell;
+			cIndex++;
+		}
+	}
+
+
+
 }
 
 
