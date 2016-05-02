@@ -28,7 +28,7 @@ void copyResultFromGPU();
 void compareHostAndGpuOutput();
 void die(const char *error); 
 void check_error(cudaError e);
-
+__global__ void kernel(float * A_GPU, float * B_GPU);
 //----------------------------------- CUDA function definitions -----------------------------------------
 
 
@@ -54,6 +54,9 @@ int main(int argc, char **argv) {
 	clock_t end = clock();
         double elapsed = (end - start) / (double) CLOCKS_PER_SEC;
         printf("Computation time in the CPU: %f seconds\n", elapsed);
+	
+	copyMatricesToGPU();
+	kernel <<< 32, 32 >>>  (A_GPU, B_GPU);
 
 	return 0;
 }
@@ -129,27 +132,27 @@ void computeCpuMMM() {
 	}
 }
 
-__global__ void kernel() {
+__global__ void kernel(float * A_GPU, float * B_GPU) {
 	int srow = 0;
 	int scol = 0;
-	int i = blockDim.x * blockIdx.x + threadIdx.x;
-	int j = blockDim.y * blockIdx.y + threadIdx.y;
-	int sizeOfWork = 10;
-	int matrixIndexX = i * sizeOfWork;
-	int matrixIndexY = j * sizeOfWork;
-	__shared__ float blockA[sizeOfWork][sizeOfWork];	
-	__shared__ float blockB[sizeOfWork][sizeOfWork];
+	int threadId = blockDim.x * blockIdx.x + threadIdx.x;
+	const int sizeOfWork = 10;
+	const int sizeOfBlock = 100;
+	__shared__ float blockA[10][10]; 
+	__shared__ float blockB[10][10]; 
 	// copy the submatrix into shared memory
-	for (int row = matrixIndexY; row < matrixIndexY+sizeOfWork; row++) {
-		for (int col = matrixIndexX; col < matrixIndexX+sizeOfWork; col++) {			
-			blockA[srow][scol] = A[row][col];
-			blockB[srow][scol] = B[row][col];
-			scol++;
+	int mIndex = threadId * sizeOfWork;
+	for (int i = 0; i < sizeOfBlock; i++) {
+		blockA[srow][scol] = A_GPU[mIndex];
+		blockB[srow][scol] = B_GPU[mIndex];
+		// Jump a row when finished copying column
+		if (i == sizeOfWork) {
+			srow++;
+			mIndex *= sizeOfWork;
 		}
-		srow++;
-	}
+		scol++;
 		
-
+	}
 }
 
 
