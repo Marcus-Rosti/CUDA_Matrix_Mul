@@ -22,13 +22,13 @@ float *A_GPU, *B_GPU, *C_GPU;
 //----------------------------------- host function definitions -----------------------------------------
 
 void allocateAndInitializeAB();
-void computeCpuMMM();/
+void computeCpuMMM();
 void copyMatricesToGPU();
 void copyResultFromGPU();
 void compareHostAndGpuOutput();
 void die(const char *error); 
 void check_error(cudaError e);
-__global__ void kernel(float * A_GPU, float * B_GPU, float * C_GPU, ArrayMetaData2D A_gpu_md, ArrayMetaData2D B_gpu_md);
+__global__ void kernel(float * A_GPU, float * B_GPU, float * C_GPU, ArrayMetadata2D A_gpu_md, ArrayMetadata2D B_gpu_md);
 //----------------------------------- CUDA function definitions -----------------------------------------
 
 #define BLOCK_SIZE 10
@@ -57,11 +57,10 @@ int main(int argc, char **argv) {
         printf("Computation time in the CPU: %f seconds\n", elapsed);
 	
 
-	cuda_mat_mul();	
 	copyMatricesToGPU();
 	dim3 dimBlock(BLOCK_SIZE,BLOCK_SIZE);
 	// width of b / BS, height of A / BS
-	dim3 dimGrid(B_MD.dimension1/ BLOCK_SIZE, A_MD.dimesion2 / BLOCK_SIZE);
+	dim3 dimGrid(B_MD.dimension1/ BLOCK_SIZE, A_MD.dimension2 / BLOCK_SIZE);
 	kernel <<< dimGrid, dimBlock >>>  (A_GPU, B_GPU, C_GPU, A_MD, B_MD);
 
 	return 0;
@@ -138,7 +137,7 @@ void computeCpuMMM() {
 	}
 }
 
-__global__ void kernel(float * A_GPU, float * B_GPU, float * C_GPU, ArrayMetaData2D A_gpu_md, ArrayMetaData2D B_gpu_md) {
+__global__ void kernel(float * A_GPU, float * B_GPU, float * C_GPU, ArrayMetadata2D A_gpu_md, ArrayMetadata2D B_gpu_md) {
 	////////////////////////////////////
 	// Marcus's idea of how it should work
 	const int blockY = blockIdx.y; // the global block indexes
@@ -147,7 +146,7 @@ __global__ void kernel(float * A_GPU, float * B_GPU, float * C_GPU, ArrayMetaDat
 	// Get the reference to C starting at the row and column
 	// Essentially this is the whole block
 	// I've probably f'ed up the index
-	float * C_block = &C_GPU[A_gpu_md.dimension2 * blockY * BLOCK_SIZE + blockX * BLOCK_SIZE]
+	float * C_block = &C_GPU[A_gpu_md.dimension2 * blockY * BLOCK_SIZE + blockX * BLOCK_SIZE];
 	
 	const int sub_row = threadIdx.y; // valued from 0:blocksize-1
 	const int sub_col = threadIdx.x; // valued from 0:blocksize-1
@@ -156,22 +155,22 @@ __global__ void kernel(float * A_GPU, float * B_GPU, float * C_GPU, ArrayMetaDat
 	volatile float my_final_value = 0.0f;
 	
 	// Let's loop over each block!
-	for (int i = 0; i < A_gpu_md.dimension2 / BLOCK_SIZE; m++) {
+	for (int i = 0; i < A_gpu_md.dimension2 / BLOCK_SIZE; i++) {
 		// Get the sub block
-		float * A_block = A_GPU[];
-		float * B_block = B_GPU[];
+		float * A_block = &A_GPU[0];
+		float * B_block = &B_GPU[0];
 	
 		// Here's all the shared memory we'll need
 		__shared__ float sharedA[BLOCK_SIZE][BLOCK_SIZE];
 		__shared__ float sharedB[BLOCK_SIZE][BLOCK_SIZE];
 
 		// Fill in that shared array with my column
-		sharedA[sub_row][sub_col] = A_block[];
-		sharedB[sub_row][sub_col] = B_block[];
+		sharedA[sub_row][sub_col] = A_block[0];
+		sharedB[sub_row][sub_col] = B_block[0];
 
 		// Sum up all the elements that go from 0:BLOCKSIZE
 		// So the row of A and the column of B for 0 to BLOCKSIZE
-		for (int j = 0; j < BLOCK_SIZE; e++) my_final_value += sharedA[sub_row][j] * sharedB[j][sub_col]
+		for (int j = 0; j < BLOCK_SIZE; j++) my_final_value += sharedA[sub_row][j] * sharedB[j][sub_col];
 	}
 	
 	C_block[sub_row * B_gpu_md.dimension1 + sub_col] = my_final_value;
