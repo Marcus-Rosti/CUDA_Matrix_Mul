@@ -63,6 +63,8 @@ int main(int argc, char **argv) {
 	dim3 dimGrid(B_MD.width/ BLOCK_SIZE, A_MD.height / BLOCK_SIZE);
 	kernel <<< dimGrid, dimBlock >>>  (A_GPU, B_GPU, C_GPU, A_MD, B_MD);
 			// num blocks, num threads/block 
+	copyResultFromGPU();
+	compareHostAndGpuOutput();
 	return 0;
 }
 
@@ -146,10 +148,11 @@ __global__ void kernel(float * A_GPU, float * B_GPU, float * C_GPU, ArrayMetadat
 	// Get the reference to C starting at the row and column
 	// Essentially this is the whole block
 	// I've probably fixed up the index
-	float * C_block = &C_GPU[blockY * BLOCK_SIZE + blockX * BLOCK_SIZE];
+	float * C_block = &C_GPU[blockY * BLOCK_SIZE * A_gpu_md.height + blockX * BLOCK_SIZE];
+
 	
-	const int sub_row = threadIdx.y; // valued from 0:blocksize-1
-	const int sub_col = threadIdx.x; // valued from 0:blocksize-1
+	const int threadY = threadIdx.y; // valued from 0:blocksize-1
+	const int threadX = threadIdx.x; // valued from 0:blocksize-1
 	
 	// Th value we're going to shove into the final array
 	volatile float my_final_value = 0.0f;
@@ -157,25 +160,30 @@ __global__ void kernel(float * A_GPU, float * B_GPU, float * C_GPU, ArrayMetadat
 	// Let's loop over each block!
 	for (int i = 0; i < A_gpu_md.height / BLOCK_SIZE; i++) {
 		// Get the sub block
-		float * A_block = &A_GPU[i*BLOCK_SIZE];
-		float * B_block = &B_GPU[i*BLOCK_SIZE];
+		float * A_block = &A_GPU[blockY * BLOCK_SIZE * A_gpu_md.height + i * BLOCK_SIZE ];
+		float * B_block = &B_GPU[i * BLOCK_SIZE * B_gpu_md.height + blockX * BLOCK_SIZE];
 	
 		// Here's all the shared memory we'll need
 		__shared__ float sharedA[BLOCK_SIZE][BLOCK_SIZE];
 		__shared__ float sharedB[BLOCK_SIZE][BLOCK_SIZE];
 
 		// Fill in that shared array with my column
-		sharedA[sub_row][sub_col] = A_block[i*BLOCK_SIZE];
-		sharedB[sub_row][sub_col] = B_block[i*BLOCK_SIZE];
-
+		sharedA[threadY][threadX] = A_block[threadY*A_gpu_md.width + threadX];
+		sharedB[threadY][threadX] = B_block[threadX*B_gpu_md.height + threadY];
+		
+//		__syncthreads();
+	
 		// Sum up all the elements that go from 0:BLOCKSIZE
 		// So the row of A and the column of B for 0 to BLOCKSIZE
-		for (int j = 0; j < BLOCK_SIZE; j++) my_final_value += sharedA[sub_row][j] * sharedB[j][sub_col];
+		for (int j = 0; j < BLOCK_SIZE; j++) my_final_value += sharedA[threadY][j] * sharedB[j][threadY];
+
+//		__syncthreads();
 	}
 	
-	C_block[sub_row * B_gpu_md.width + sub_col] = my_final_value;
+	C_block[threadY * B_gpu_md.width + threadX] = my_final_value;
 	//
 	////////////////////////////////////////////////	
+	/*
 	int srow = 0;
 	int scol = 0;
 	int threadId = blockDim.x * blockIdx.x + threadIdx.x;
@@ -219,7 +227,7 @@ __global__ void kernel(float * A_GPU, float * B_GPU, float * C_GPU, ArrayMetadat
 		}
 	}
 
-
+	*/
 
 }
 
@@ -234,6 +242,8 @@ void compareHostAndGpuOutput() {
 		if (fabs(C[i] - C_CPU[i]) > 0.01) {
 			missmatchCount++;
 			printf("mismatch at index %i: %f\t%f\n", i, C[i], C_CPU[i]);
+		} else {
+			printf("match at index %i: %f\t%f\n", i, C[i], C_CPU[i]);
 		}
 	}
 	if (missmatchCount > 0) {
