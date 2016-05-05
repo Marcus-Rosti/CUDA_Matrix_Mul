@@ -57,17 +57,27 @@ int main(int argc, char **argv) {
         printf("Computation time in the CPU: %f seconds\n", elapsed);
 	
 
-	copyMatricesToGPU();
 	dim3 dimBlock(BLOCK_SIZE,BLOCK_SIZE);
 	// width of b / BS, height of A / BS
 	dim3 dimGrid(B_MD.width/ BLOCK_SIZE, A_MD.height / BLOCK_SIZE);
 	clock_t start_gpu = clock();
+	clock_t start_copy = clock();
+	copyMatricesToGPU();
+	clock_t stop_copy = clock();
+	clock_t start_calc = clock();
 	kernel <<< dimGrid, dimBlock >>>  (A_GPU, B_GPU, C_GPU, A_MD, B_MD);
+	clock_t stop_calc = clock();		
+	// num blocks, num threads/block
+	clock_t start_copy2 = clock();
+	copyResultFromGPU();
+	clock_t stop_copy2 = clock();
+
 	clock_t end_gpu = clock();
 	double elapsed_gpu = (end_gpu - start_gpu) / (double) CLOCKS_PER_SEC;
-			// num blocks, num threads/block
-	printf("Computation time in the GPU: %f seconds\n", elapsed_gpu); 
-	copyResultFromGPU();
+	printf("Total computation time: %f seconds\n", elapsed_gpu);
+	printf("Copy to GPU time      : %f seconds\n", (stop_copy - start_copy)/ (double) CLOCKS_PER_SEC);
+	printf("Computation time      : %f seconds\n", (stop_calc - start_calc)/ (double) CLOCKS_PER_SEC);	
+	printf("Copy from GPU time    : %f seconds\n", (stop_copy2 - start_copy2)/ (double) CLOCKS_PER_SEC); 
 	compareHostAndGpuOutput();
 	printf("Speedup %f\n", (elapsed/elapsed_gpu));
 	return 0;
