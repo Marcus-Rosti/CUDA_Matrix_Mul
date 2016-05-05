@@ -36,11 +36,11 @@ __global__ void kernel(float * A_GPU, float * B_GPU, float * C_GPU, ArrayMetadat
 //-------------------------------------------------------------------------------------------------------
 int main(int argc, char **argv) {
 	
-	A_MD.width = (argc > 1) ? atoi(argv[1]) : 100;
+	A_MD.width  = (argc > 1) ? atoi(argv[1]) : 100;
 	A_MD.height = (argc > 2) ? atoi(argv[2]) : A_MD.width;
-	B_MD.width = (argc > 3) ? atoi(argv[3]) : A_MD.height;
+	B_MD.width  = (argc > 3) ? atoi(argv[3]) : A_MD.height;
 	B_MD.height = (argc > 4) ? atoi(argv[4]) : B_MD.width;
-	C_MD.width = A_MD.width;
+	C_MD.width  = A_MD.width;
 	C_MD.height = B_MD.height;
 
 	printf("Matrix A is %d-by-%d\n", A_MD.width, A_MD.height);
@@ -61,10 +61,15 @@ int main(int argc, char **argv) {
 	dim3 dimBlock(BLOCK_SIZE,BLOCK_SIZE);
 	// width of b / BS, height of A / BS
 	dim3 dimGrid(B_MD.width/ BLOCK_SIZE, A_MD.height / BLOCK_SIZE);
+	clock_t start_gpu = clock();
 	kernel <<< dimGrid, dimBlock >>>  (A_GPU, B_GPU, C_GPU, A_MD, B_MD);
-			// num blocks, num threads/block 
+	clock_t end_gpu = clock();
+	double elapsed_gpu = (end_gpu - start_gpu) / (double) CLOCKS_PER_SEC;
+			// num blocks, num threads/block
+	printf("Computation time in the GPU: %f seconds\n", elapsed_gpu); 
 	copyResultFromGPU();
 	compareHostAndGpuOutput();
+	printf("Speedup %f\n", (elapsed/elapsed_gpu));
 	return 0;
 }
 
@@ -159,7 +164,7 @@ __global__ void kernel(float * A_GPU, float * B_GPU, float * C_GPU, ArrayMetadat
 	
 	// Let's loop over each block!
 	for (int i = 0; i < A_gpu_md.height / BLOCK_SIZE; i++) {
-		// Get the sub block
+		// Get the pointer to the block where A starts, for this iteration
 		float * A_block = &A_GPU[blockY * BLOCK_SIZE * A_gpu_md.height + i * BLOCK_SIZE ];
 		float * B_block = &B_GPU[i * BLOCK_SIZE * B_gpu_md.height + blockX * BLOCK_SIZE];
 	
@@ -169,17 +174,17 @@ __global__ void kernel(float * A_GPU, float * B_GPU, float * C_GPU, ArrayMetadat
 
 		// Fill in that shared array with my column
 		sharedA[threadY][threadX] = A_block[threadY*A_gpu_md.width + threadX];
-		sharedB[threadY][threadX] = B_block[threadX*B_gpu_md.height + threadY];
-		
-//		__syncthreads();
+		sharedB[threadY][threadX] = B_block[threadY*B_gpu_md.height + threadX];
+// Wait till they've all loaded into shared		
+__syncthreads();
 	
 		// Sum up all the elements that go from 0:BLOCKSIZE
 		// So the row of A and the column of B for 0 to BLOCKSIZE
-		for (int j = 0; j < BLOCK_SIZE; j++) my_final_value += sharedA[threadY][j] * sharedB[j][threadY];
-
-//		__syncthreads();
+		for (int j = 0; j < BLOCK_SIZE; j++) my_final_value += sharedA[threadY][j] * sharedB[j][threadX];
+// Wait until everyone's calculated
+__syncthreads();
 	}
-	
+	// Shove it back into the array
 	C_block[threadY * B_gpu_md.width + threadX] = my_final_value;
 	//
 	////////////////////////////////////////////////	
@@ -241,9 +246,9 @@ void compareHostAndGpuOutput() {
 	for (int i = 0; i < totalElements; i++) {
 		if (fabs(C[i] - C_CPU[i]) > 0.01) {
 			missmatchCount++;
-			printf("mismatch at index %i: %f\t%f\n", i, C[i], C_CPU[i]);
+			//printf("mismatch at index %i: %f\t%f\n", i, C[i], C_CPU[i]);
 		} else {
-			printf("match at index %i: %f\t%f\n", i, C[i], C_CPU[i]);
+			//printf("match at index %i: %f\t%f\n", i, C[i], C_CPU[i]);
 		}
 	}
 	if (missmatchCount > 0) {
