@@ -8,8 +8,8 @@ using namespace std;
 //----------------------------------- Structures and Globals---------------------------------------------
 
 typedef struct {
-	int dimension1;
-	int dimension2;	
+	int width;
+	int height;	
 } ArrayMetadata2D;
 
 // metadata variables describing dimensionalities of all data structures involved in the computation
@@ -36,16 +36,16 @@ __global__ void kernel(float * A_GPU, float * B_GPU, float * C_GPU, ArrayMetadat
 //-------------------------------------------------------------------------------------------------------
 int main(int argc, char **argv) {
 	
-	A_MD.dimension1 = (argc > 1) ? atoi(argv[1]) : 100;
-	A_MD.dimension2 = (argc > 2) ? atoi(argv[2]) : A_MD.dimension1;
-	B_MD.dimension1 = (argc > 3) ? atoi(argv[3]) : A_MD.dimension2;
-	B_MD.dimension2 = (argc > 4) ? atoi(argv[4]) : B_MD.dimension1;
-	C_MD.dimension1 = A_MD.dimension1;
-	C_MD.dimension2 = B_MD.dimension2;
+	A_MD.width = (argc > 1) ? atoi(argv[1]) : 100;
+	A_MD.height = (argc > 2) ? atoi(argv[2]) : A_MD.width;
+	B_MD.width = (argc > 3) ? atoi(argv[3]) : A_MD.height;
+	B_MD.height = (argc > 4) ? atoi(argv[4]) : B_MD.width;
+	C_MD.width = A_MD.width;
+	C_MD.height = B_MD.height;
 
-	printf("Matrix A is %d-by-%d\n", A_MD.dimension1, A_MD.dimension2);
-	printf("Matrix B is %d-by-%d\n", B_MD.dimension1, B_MD.dimension2);
-	printf("Matrix C is %d-by-%d\n", C_MD.dimension1, C_MD.dimension2);
+	printf("Matrix A is %d-by-%d\n", A_MD.width, A_MD.height);
+	printf("Matrix B is %d-by-%d\n", B_MD.width, B_MD.height);
+	printf("Matrix C is %d-by-%d\n", C_MD.width, C_MD.height);
 
 	allocateAndInitializeAB();
 
@@ -60,31 +60,31 @@ int main(int argc, char **argv) {
 	copyMatricesToGPU();
 	dim3 dimBlock(BLOCK_SIZE,BLOCK_SIZE);
 	// width of b / BS, height of A / BS
-	dim3 dimGrid(B_MD.dimension1/ BLOCK_SIZE, A_MD.dimension2 / BLOCK_SIZE);
+	dim3 dimGrid(B_MD.width/ BLOCK_SIZE, A_MD.height / BLOCK_SIZE);
 	kernel <<< dimGrid, dimBlock >>>  (A_GPU, B_GPU, C_GPU, A_MD, B_MD);
-
+			// num blocks, num threads/block 
 	return 0;
 }
 
 // allocate and initialize A and B using a random number generator
 void allocateAndInitializeAB() {
 	
-	size_t sizeofA = A_MD.dimension1 * A_MD.dimension2 * sizeof(float);
+	size_t sizeofA = A_MD.width * A_MD.height * sizeof(float);
 	A = (float*) malloc(sizeofA);
 	
 	srand(time(NULL));
-  	for (int i = 0; i < A_MD.dimension1; i++) {
-		for (int j = 0; j < A_MD.dimension2; j++) {
-			int index = i * A_MD.dimension2 + j;
+  	for (int i = 0; i < A_MD.width; i++) {
+		for (int j = 0; j < A_MD.height; j++) {
+			int index = i * A_MD.height + j;
 			A[index] = (rand() % 1000) * 0.001; 
 		}
 	}
 	
-	size_t sizeofB = B_MD.dimension1 * B_MD.dimension2 * sizeof(float);
+	size_t sizeofB = B_MD.width * B_MD.height * sizeof(float);
 	B = (float*) malloc(sizeofB);
-  	for (int i = 0; i < B_MD.dimension1; i++) {
-		for (int j = 0; j < B_MD.dimension2; j++) {
-			int index = i * B_MD.dimension2 + j;
+  	for (int i = 0; i < B_MD.width; i++) {
+		for (int j = 0; j < B_MD.height; j++) {
+			int index = i * B_MD.height + j;
 			B[index] = (rand() % 1000) * 0.001; 
 		}
 	}
@@ -93,21 +93,21 @@ void allocateAndInitializeAB() {
 // allocate memory in the GPU for all matrices, and copy A and B content from the host CPU memory to the GPU memory
 void copyMatricesToGPU() {
 	
-	size_t sizeofA = A_MD.dimension1 * A_MD.dimension2 * sizeof(float);
+	size_t sizeofA = A_MD.width * A_MD.height * sizeof(float);
 	check_error(cudaMalloc((void **) &A_GPU, sizeofA));
 	check_error(cudaMemcpy(A_GPU, A, sizeofA, cudaMemcpyHostToDevice));
 	
-	size_t sizeofB = B_MD.dimension1 * B_MD.dimension2 * sizeof(float);
+	size_t sizeofB = B_MD.width * B_MD.height * sizeof(float);
 	check_error(cudaMalloc((void **) &B_GPU, sizeofB));
 	check_error(cudaMemcpy(B_GPU, B, sizeofB, cudaMemcpyHostToDevice));
 	
-	size_t sizeofC = C_MD.dimension1 * C_MD.dimension2 * sizeof(float);
+	size_t sizeofC = C_MD.width * C_MD.height * sizeof(float);
 	check_error(cudaMalloc((void **) &C_GPU, sizeofC));
 }
 
 // copy results from C_GPU which is in GPU card memory to C_CPU which is in the host CPU for result comparison
 void copyResultFromGPU() {
-	size_t sizeofC = C_MD.dimension1 * C_MD.dimension2 * sizeof(float);
+	size_t sizeofC = C_MD.width * C_MD.height * sizeof(float);
 	C_CPU = (float*) malloc(sizeofC);
 	check_error(cudaMemcpy(C_CPU, C_GPU, sizeofC, cudaMemcpyDeviceToHost));
 }
@@ -118,19 +118,19 @@ void copyResultFromGPU() {
 void computeCpuMMM() {
 	
 	// allocate the result matrix for the CPU computation
-	size_t sizeofC = C_MD.dimension1 * C_MD.dimension2 * sizeof(float);
+	size_t sizeofC = C_MD.width * C_MD.height * sizeof(float);
 	C = (float*) malloc(sizeofC);
 	
 	// compute C[i][j] as the sum of A[i][k] * B[k][j] for all columns k of A
-	for (int i = 0; i < A_MD.dimension1; i++) {
-		int a_i = i * A_MD.dimension2;
-		int c_i = i * C_MD.dimension2;
-		for (int j = 0; j < B_MD.dimension2; j++) {
+	for (int i = 0; i < A_MD.width; i++) {
+		int a_i = i * A_MD.height;
+		int c_i = i * C_MD.height;
+		for (int j = 0; j < B_MD.height; j++) {
 			int c_index = c_i + j;
 			C[c_index] = 0;
-			for (int k = 0; k < B_MD.dimension1; k++) {
+			for (int k = 0; k < B_MD.width; k++) {
 				int a_index = a_i + k;
-				int b_index = k * B_MD.dimension2 + j;
+				int b_index = k * B_MD.height + j;
 				C[c_index] += A[a_index] * B[b_index];
 			}
 		}
@@ -145,8 +145,8 @@ __global__ void kernel(float * A_GPU, float * B_GPU, float * C_GPU, ArrayMetadat
 	
 	// Get the reference to C starting at the row and column
 	// Essentially this is the whole block
-	// I've probably f'ed up the index
-	float * C_block = &C_GPU[A_gpu_md.dimension2 * blockY * BLOCK_SIZE + blockX * BLOCK_SIZE];
+	// I've probably fixed up the index
+	float * C_block = &C_GPU[blockY * BLOCK_SIZE + blockX * BLOCK_SIZE];
 	
 	const int sub_row = threadIdx.y; // valued from 0:blocksize-1
 	const int sub_col = threadIdx.x; // valued from 0:blocksize-1
@@ -155,25 +155,25 @@ __global__ void kernel(float * A_GPU, float * B_GPU, float * C_GPU, ArrayMetadat
 	volatile float my_final_value = 0.0f;
 	
 	// Let's loop over each block!
-	for (int i = 0; i < A_gpu_md.dimension2 / BLOCK_SIZE; i++) {
+	for (int i = 0; i < A_gpu_md.height / BLOCK_SIZE; i++) {
 		// Get the sub block
-		float * A_block = &A_GPU[0];
-		float * B_block = &B_GPU[0];
+		float * A_block = &A_GPU[i*BLOCK_SIZE];
+		float * B_block = &B_GPU[i*BLOCK_SIZE];
 	
 		// Here's all the shared memory we'll need
 		__shared__ float sharedA[BLOCK_SIZE][BLOCK_SIZE];
 		__shared__ float sharedB[BLOCK_SIZE][BLOCK_SIZE];
 
 		// Fill in that shared array with my column
-		sharedA[sub_row][sub_col] = A_block[0];
-		sharedB[sub_row][sub_col] = B_block[0];
+		sharedA[sub_row][sub_col] = A_block[i*BLOCK_SIZE];
+		sharedB[sub_row][sub_col] = B_block[i*BLOCK_SIZE];
 
 		// Sum up all the elements that go from 0:BLOCKSIZE
 		// So the row of A and the column of B for 0 to BLOCKSIZE
 		for (int j = 0; j < BLOCK_SIZE; j++) my_final_value += sharedA[sub_row][j] * sharedB[j][sub_col];
 	}
 	
-	C_block[sub_row * B_gpu_md.dimension1 + sub_col] = my_final_value;
+	C_block[sub_row * B_gpu_md.width + sub_col] = my_final_value;
 	//
 	////////////////////////////////////////////////	
 	int srow = 0;
@@ -228,7 +228,7 @@ __global__ void kernel(float * A_GPU, float * B_GPU, float * C_GPU, ArrayMetadat
 // function to determine if the GPU computation is done correctly by comparing the output from the GPU with that
 // from the CPU
 void compareHostAndGpuOutput() {
-	int totalElements = C_MD.dimension1 * C_MD.dimension2;
+	int totalElements = C_MD.width * C_MD.height;
 	int missmatchCount = 0;
 	for (int i = 0; i < totalElements; i++) {
 		if (fabs(C[i] - C_CPU[i]) > 0.01) {
